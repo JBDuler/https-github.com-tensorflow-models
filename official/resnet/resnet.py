@@ -139,16 +139,21 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
 
 
 ################################################################################
-# Functions building the ResNet model.
+# Convenience functions building the ResNet model.
 ################################################################################
-def batch_norm_relu(inputs, training, data_format, intermediate_addition=None):
-  """Performs a batch normalization followed by a ReLU."""
+def batch_norm(inputs, training, data_format):
+  """Performs a batch normalization using a standard set of parameters"""
   # We set fused=True for a significant performance boost. See
   # https://www.tensorflow.org/performance/performance_guide#common_fused_ops
-  inputs = tf.layers.batch_normalization(
+  return tf.layers.batch_normalization(
       inputs=inputs, axis=1 if data_format == 'channels_first' else 3,
       momentum=_BATCH_NORM_DECAY, epsilon=_BATCH_NORM_EPSILON, center=True,
       scale=True, training=training, fused=True)
+
+
+def batch_norm_relu(inputs, training, data_format, intermediate_addition=None):
+  """Performs a batch normalization followed by a ReLU."""
+  inputs = batch_norm(inputs, training, data_format)
   if intermediate_addition is not None:
     inputs += intermediate_addition
   inputs = tf.nn.relu(inputs)
@@ -196,6 +201,9 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format):
       data_format=data_format)
 
 
+################################################################################
+# ResNet block definitions.
+################################################################################
 def _building_block_v1(inputs, filters, training, projection_shortcut, strides,
     data_format):
   """
@@ -223,7 +231,8 @@ def _building_block_v1(inputs, filters, training, projection_shortcut, strides,
 
   if projection_shortcut is not None:
     shortcut = projection_shortcut(inputs)
-    shortcut = batch_norm_relu(shortcut, training, data_format)
+    shortcut = batch_norm(inputs=shortcut, training=training,
+                          data_format=data_format)
 
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=filters, kernel_size=3, strides=strides,
@@ -296,7 +305,8 @@ def _bottleneck_block_v1(inputs, filters, training, projection_shortcut,
 
   if projection_shortcut is not None:
     shortcut = projection_shortcut(inputs)
-    shortcut = batch_norm_relu(shortcut, training, data_format)
+    shortcut = batch_norm(inputs=shortcut, training=training,
+                          data_format=data_format)
 
   inputs = conv2d_fixed_padding(
       inputs=inputs, filters=filters, kernel_size=1, strides=1,
