@@ -266,7 +266,7 @@ def _building_block_v2(inputs, filters, training, projection_shortcut, strides,
       (typically a 1x1 convolution when downsampling the input).
     strides: The block's stride. If greater than 1, this block will ultimately
       downsample the input.
-    data_format: The input format ('channels_last' or 'channels_first')..
+    data_format: The input format ('channels_last' or 'channels_first').
 
   Returns:
     The output tensor of the block.
