@@ -140,7 +140,8 @@ def get_synth_input_fn():
 ###############################################################################
 class Cifar10Model(resnet.Model):
 
-  def __init__(self, resnet_size, data_format=None, num_classes=_NUM_CLASSES):
+  def __init__(self, resnet_size, data_format=None, num_classes=_NUM_CLASSES,
+      version=resnet.DEFAULT_VERSION):
     """These are the parameters that work for CIFAR-10 data.
 
     Args:
@@ -149,6 +150,7 @@ class Cifar10Model(resnet.Model):
         data format to use when setting up the model.
       num_classes: The number of output classes needed from the model. This
         enables users to extend the same model to their own datasets.
+      version: ResNet version. See README.md for details.
     """
     if resnet_size % 6 != 2:
       raise ValueError('resnet_size must be 6n + 2:', resnet_size)
@@ -165,10 +167,11 @@ class Cifar10Model(resnet.Model):
         first_pool_stride=None,
         second_pool_size=8,
         second_pool_stride=1,
-        block_fn=resnet.building_block,
         block_sizes=[num_blocks] * 3,
         block_strides=[1, 2, 2],
         final_size=64,
+        version=version,
+        bottleneck=False,
         data_format=data_format)
 
 
@@ -199,6 +202,7 @@ def cifar10_model_fn(features, labels, mode, params):
                                 learning_rate_fn=learning_rate_fn,
                                 momentum=0.9,
                                 data_format=params['data_format'],
+                                version=params['version'],
                                 loss_filter_fn=loss_filter_fn,
                                 multi_gpu=params['multi_gpu'])
 

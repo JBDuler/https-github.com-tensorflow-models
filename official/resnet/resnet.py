@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Contains definitions for the preactivation form of Residual Networks
-(also known as ResNet v2).
+"""Contains definitions for Residual Networks.
 
-Residual networks (ResNets) were originally proposed in:
+Residual networks ('v1' ResNets) were originally proposed in:
 [1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 
-The full preactivation 'v2' ResNet variant implemented in this module was
-introduced by:
+The full preactivation 'v2' ResNet variant was introduced by:
 [2] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
     Identity Mappings in Deep Residual Networks. arXiv: 1603.05027
 
@@ -40,6 +38,8 @@ import tensorflow as tf
 
 _BATCH_NORM_DECAY = 0.997
 _BATCH_NORM_EPSILON = 1e-5
+
+DEFAULT_VERSION = 2
 
 
 ################################################################################
@@ -141,7 +141,7 @@ def get_synth_input_fn(height, width, num_channels, num_classes):
 ################################################################################
 # Functions building the ResNet model.
 ################################################################################
-def batch_norm_relu(inputs, training, data_format):
+def batch_norm_relu(inputs, training, data_format, intermediate_addition=None):
   """Performs a batch normalization followed by a ReLU."""
   # We set fused=True for a significant performance boost. See
   # https://www.tensorflow.org/performance/performance_guide#common_fused_ops
@@ -149,6 +149,8 @@ def batch_norm_relu(inputs, training, data_format):
       inputs=inputs, axis=1 if data_format == 'channels_first' else 3,
       momentum=_BATCH_NORM_DECAY, epsilon=_BATCH_NORM_EPSILON, center=True,
       scale=True, training=training, fused=True)
+  if intermediate_addition is not None:
+    inputs += intermediate_addition
   inputs = tf.nn.relu(inputs)
   return inputs
 
@@ -194,9 +196,13 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format):
       data_format=data_format)
 
 
-def building_block(inputs, filters, training, projection_shortcut, strides,
-                   data_format):
-  """Standard building block for residual networks with BN before convolutions.
+def _building_block_v1(inputs, filters, training, projection_shortcut, strides,
+    data_format):
+  """
+  Convolution then batch normalization then ReLU as described by:
+    Deep Residual Learning for Image Recognition
+    https://arxiv.org/pdf/1512.03385.pdf
+    by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
 
   Args:
     inputs: A tensor of size [batch, channels, height_in, width_in] or
@@ -209,6 +215,49 @@ def building_block(inputs, filters, training, projection_shortcut, strides,
     strides: The block's stride. If greater than 1, this block will ultimately
       downsample the input.
     data_format: The input format ('channels_last' or 'channels_first').
+
+  Returns:
+    The output tensor of the block.
+  """
+  shortcut = inputs
+
+  if projection_shortcut is not None:
+    shortcut = projection_shortcut(inputs)
+    shortcut = batch_norm_relu(shortcut, training, data_format)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=strides,
+      data_format=data_format)
+  inputs = batch_norm_relu(inputs, training, data_format)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=1,
+      data_format=data_format)
+  inputs = batch_norm_relu(inputs, training, data_format,
+                           intermediate_addition=shortcut)
+
+  return inputs
+
+
+def _building_block_v2(inputs, filters, training, projection_shortcut, strides,
+    data_format):
+  """
+  Batch normalization then ReLu then convolution as described by:
+    Identity Mappings in Deep Residual Networks
+    https://arxiv.org/pdf/1603.05027.pdf
+    by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
+
+  Args:
+    inputs: A tensor of size [batch, channels, height_in, width_in] or
+      [batch, height_in, width_in, channels] depending on data_format.
+    filters: The number of filters for the convolutions.
+    training: A Boolean for whether the model is in training or inference
+      mode. Needed for batch normalization.
+    projection_shortcut: The function to use for projection shortcuts
+      (typically a 1x1 convolution when downsampling the input).
+    strides: The block's stride. If greater than 1, this block will ultimately
+      downsample the input.
+    data_format: The input format ('channels_last' or 'channels_first')..
 
   Returns:
     The output tensor of the block.
@@ -233,25 +282,56 @@ def building_block(inputs, filters, training, projection_shortcut, strides,
   return inputs + shortcut
 
 
-def bottleneck_block(inputs, filters, training, projection_shortcut,
-                     strides, data_format):
-  """Bottleneck block variant for residual networks with BN before convolutions.
+def _bottleneck_block_v1(inputs, filters, training, projection_shortcut,
+    strides, data_format):
+  """
+  Similar to _building_block_v1(), except using the "bottleneck" blocks
+  described in:
+    Convolution then batch normalization then ReLU as described by:
+      Deep Residual Learning for Image Recognition
+      https://arxiv.org/pdf/1512.03385.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
+  """
+  shortcut = inputs
 
-  Args:
-    inputs: A tensor of size [batch, channels, height_in, width_in] or
-      [batch, height_in, width_in, channels] depending on data_format.
-    filters: The number of filters for the first two convolutions. Note
-      that the third and final convolution will use 4 times as many filters.
-    training: A Boolean for whether the model is in training or inference
-      mode. Needed for batch normalization.
-    projection_shortcut: The function to use for projection shortcuts
-      (typically a 1x1 convolution when downsampling the input).
-    strides: The block's stride. If greater than 1, this block will ultimately
-      downsample the input.
-    data_format: The input format ('channels_last' or 'channels_first').
+  if projection_shortcut is not None:
+    shortcut = projection_shortcut(inputs)
+    shortcut = batch_norm_relu(shortcut, training, data_format)
 
-  Returns:
-    The output tensor of the block.
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=1, strides=1,
+      data_format=data_format)
+  inputs = batch_norm_relu(inputs, training, data_format)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=filters, kernel_size=3, strides=strides,
+      data_format=data_format)
+  inputs = batch_norm_relu(inputs, training, data_format)
+
+  inputs = conv2d_fixed_padding(
+      inputs=inputs, filters=4 * filters, kernel_size=1, strides=1,
+      data_format=data_format)
+  inputs = batch_norm_relu(inputs, training, data_format,
+                           intermediate_addition=shortcut)
+
+  return inputs
+
+
+def _bottleneck_block_v2(inputs, filters, training, projection_shortcut,
+    strides, data_format):
+  """
+  Similar to _building_block_v2(), except using the "bottleneck" blocks
+  described in:
+    Convolution then batch normalization then ReLU as described by:
+      Deep Residual Learning for Image Recognition
+      https://arxiv.org/pdf/1512.03385.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Dec 2015.
+
+  adapted to the ordering conventions of:
+    Batch normalization then ReLu then convolution as described by:
+      Identity Mappings in Deep Residual Networks
+      https://arxiv.org/pdf/1603.05027.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
   """
   shortcut = inputs
   inputs = batch_norm_relu(inputs, training, data_format)
@@ -299,8 +379,10 @@ def block_layer(inputs, filters, block_fn, blocks, strides, training, name,
   Returns:
     The output tensor of the block layer.
   """
+  filters_out = filters
   # Bottleneck blocks end with 4x the number of filters as they start with
-  filters_out = 4 * filters if block_fn is bottleneck_block else filters
+  if block_fn is _bottleneck_block_v1 or block_fn is _bottleneck_block_v2:
+    filters_out *= 4
 
   def projection_shortcut(inputs):
     return conv2d_fixed_padding(
@@ -323,8 +405,9 @@ class Model(object):
 
   def __init__(self, resnet_size, num_classes, num_filters, kernel_size,
                conv_stride, first_pool_size, first_pool_stride,
-               second_pool_size, second_pool_stride, block_fn, block_sizes,
-               block_strides, final_size, data_format=None):
+               second_pool_size, second_pool_stride, block_sizes, block_strides,
+               final_size, version=DEFAULT_VERSION, bottleneck=False,
+               data_format=None):
     """Creates a model for classifying an image.
 
     Args:
@@ -349,6 +432,9 @@ class Model(object):
       block_strides: List of integers representing the desired stride size for
         each of the sets of block layers. Should be same length as block_sizes.
       final_size: The expected size of the model after the second pooling.
+      version: Integer defining the order of layers. A detailed
+        description can be found in README.md.
+      bottleneck: Use regular blocks or bottleneck blocks.
       data_format: Input format ('channels_last', 'channels_first', or None).
         If set to None, the format is dependent on whether a GPU is available.
     """
@@ -357,6 +443,22 @@ class Model(object):
     if not data_format:
       data_format = (
           'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
+
+    self.resnet_version = version
+    if version not in (1, 2):
+      raise ValueError(
+          "Resnet version should be 1 or 2. See README.md for citations.")
+
+    if bottleneck:
+      if version == 1:
+        self.block_fn = _bottleneck_block_v1
+      else:
+        self.block_fn = _bottleneck_block_v2
+    else:
+      if version == 1:
+        self.block_fn = _building_block_v1
+      else:
+        self.block_fn = _building_block_v2
 
     self.data_format = data_format
     self.num_classes = num_classes
@@ -367,7 +469,6 @@ class Model(object):
     self.first_pool_stride = first_pool_stride
     self.second_pool_size = second_pool_size
     self.second_pool_stride = second_pool_stride
-    self.block_fn = block_fn
     self.block_sizes = block_sizes
     self.block_strides = block_strides
     self.final_size = final_size
@@ -463,7 +564,7 @@ def learning_rate_with_decay(
 
 def resnet_model_fn(features, labels, mode, model_class,
                     resnet_size, weight_decay, learning_rate_fn, momentum,
-                    data_format, loss_filter_fn=None, multi_gpu=False):
+                    data_format, version, loss_filter_fn=None, multi_gpu=False):
   """Shared functionality for different resnet model_fns.
 
   Initializes the ResnetModel representing the model layers
@@ -502,7 +603,7 @@ def resnet_model_fn(features, labels, mode, model_class,
   # Generate a summary node for the images
   tf.summary.image('images', features, max_outputs=6)
 
-  model = model_class(resnet_size, data_format)
+  model = model_class(resnet_size, data_format, version=version)
   logits = model(features, mode == tf.estimator.ModeKeys.TRAIN)
 
   predictions = {
@@ -618,6 +719,7 @@ def resnet_main(flags, model_function, input_function):
           'data_format': flags.data_format,
           'batch_size': flags.batch_size,
           'multi_gpu': flags.multi_gpu,
+          'version': flags.version,
       })
 
   for _ in range(flags.train_epochs // flags.epochs_per_eval):
@@ -700,9 +802,17 @@ class ResnetArgParser(argparse.ArgumentParser):
         '--multi_gpu', action='store_true',
         help='If set, run across all available GPUs.')
 
+    self.add_argument(
+        '-v', '--version', type=int, choices=[1, 2], dest="version",
+        default=DEFAULT_VERSION,
+        help="Version of ResNet. (1 or 2) See README.md for details."
+    )
+
     # Advanced args
     self.add_argument(
         '--use_synthetic_data', action='store_true',
         help='If set, use fake data (zeroes) instead of a real dataset. '
              'This mode is useful for performance debugging, as it removes '
              'input processing steps, but will not learn anything.')
+
+
