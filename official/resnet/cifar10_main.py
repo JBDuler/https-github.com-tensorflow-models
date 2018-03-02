@@ -150,7 +150,8 @@ class Cifar10Model(resnet.Model):
         data format to use when setting up the model.
       num_classes: The number of output classes needed from the model. This
         enables users to extend the same model to their own datasets.
-      version: ResNet version. See README.md for details.
+      version: Integer representing which version of the ResNet network to use.
+        See README for details. Valid values: [1, 2]
     """
     if resnet_size % 6 != 2:
       raise ValueError('resnet_size must be 6n + 2:', resnet_size)
@@ -159,6 +160,7 @@ class Cifar10Model(resnet.Model):
 
     super(Cifar10Model, self).__init__(
         resnet_size=resnet_size,
+        bottleneck=False,
         num_classes=num_classes,
         num_filters=16,
         kernel_size=3,
@@ -171,7 +173,6 @@ class Cifar10Model(resnet.Model):
         block_strides=[1, 2, 2],
         final_size=64,
         version=version,
-        bottleneck=False,
         data_format=data_format)
 
 

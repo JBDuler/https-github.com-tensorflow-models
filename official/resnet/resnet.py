@@ -413,15 +413,16 @@ class Model(object):
   """Base class for building the Resnet v2 Model.
   """
 
-  def __init__(self, resnet_size, num_classes, num_filters, kernel_size,
+  def __init__(self, resnet_size, bottleneck, num_classes, num_filters,
+               kernel_size,
                conv_stride, first_pool_size, first_pool_stride,
                second_pool_size, second_pool_stride, block_sizes, block_strides,
-               final_size, version=DEFAULT_VERSION, bottleneck=False,
-               data_format=None):
+               final_size, version=DEFAULT_VERSION, data_format=None):
     """Creates a model for classifying an image.
 
     Args:
       resnet_size: A single integer for the size of the ResNet model.
+      bottleneck: Use regular blocks or bottleneck blocks.
       num_classes: The number of classes used as labels.
       num_filters: The number of filters to use for the first block layer
         of the model. This number is then doubled for each subsequent block
@@ -442,7 +443,6 @@ class Model(object):
       final_size: The expected size of the model after the second pooling.
       version: Integer representing which version of the ResNet network to use.
         See README for details. Valid values: [1, 2]
-      bottleneck: Use regular blocks or bottleneck blocks.
       data_format: Input format ('channels_last', 'channels_first', or None).
         If set to None, the format is dependent on whether a GPU is available.
     """
