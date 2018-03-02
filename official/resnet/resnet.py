@@ -202,6 +202,134 @@ def conv2d_fixed_padding(inputs, filters, kernel_size, strides, data_format):
 
 
 ################################################################################
+# Combined block definitions
+################################################################################
+import warnings
+warnings.warn("Do not merge without resolving readable block definitions.")
+
+def _block_dimensions(bottleneck, strides):
+  """Defines the dimensions of an individual ResNet block. The distinction
+  between a building block and a bottleneck block is given in:
+
+  Deep Residual Learning for Image Recognition
+    Figure 5
+    "Deeper Bottleneck Architectures" section
+
+    As the name suggests, the bottleneck block starts by squeezing the input to
+  the block through a relatively small number of 1-wide convolutions.
+
+  The fields of a block are:
+    kernel_size: The dimension of the 2D kernels for that layer.
+    filters_mult: A multiplicative factor increase the number of filters. In
+      bottleneck layers the number of filters is varied across the block to
+      achieve the bottleneck effect.
+    strides: The stride used to downsample an image in a projection block.
+      Building and bottleneck blocks use different conventions to downsample.
+
+  Args:
+    bottleneck: A boolean setting the use of bottleneck or building blocks.
+    strides: An integer setting the stride to downsample images. A stride of 1
+      indicates that no projection occurs, and a stride of 2 is generally the
+      projection stride.
+
+  Returns:
+    A description of the layer type.
+  """
+  if bottleneck:
+    return [
+      dict(kernel_size=1, filters_mult=1, strides=1),
+      dict(kernel_size=3, filters_mult=1, strides=strides),
+      dict(kernel_size=1, filters_mult=4, strides=1),
+    ]
+  return [
+    dict(kernel_size=3, filters_mult=1, strides=strides),
+    dict(kernel_size=3, filters_mult=1, strides=1),
+  ]
+
+
+def construct_block(version, bottleneck, inputs, filters, training,
+    projection_shortcut, strides, data_format):
+  """Constructs a single ResNet block. Version 1 of ResNet performs convolution,
+  then batch normalization, then ReLU. Version 2 performs batch normalization,
+  then ReLU, then convolution. A schematic of the two architectures can be found
+  in Figure 1 (left) of:
+
+    Identity Mappings in Deep Residual Networks
+      https://arxiv.org/pdf/1603.05027.pdf
+      by Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun, Jul 2016.
+
+  Args:
+    version: Integer representing which version of the ResNet network to use.
+      See README for details. Valid values: [1, 2]
+    bottleneck: A boolean setting the use of bottleneck or building blocks.
+    inputs: A tensor of size [batch, channels, height_in, width_in] or
+      [batch, height_in, width_in, channels] depending on data_format.
+    filters: The number of filters for the convolutions.
+    training: A Boolean for whether the model is in training or inference
+      mode. Needed for batch normalization.
+    projection_shortcut: The function to use for projection shortcuts
+      (typically a 1x1 convolution when downsampling the input).
+    strides: The block's stride. If greater than 1, this block will ultimately
+      downsample the input.
+    data_format: The input format ('channels_last' or 'channels_first').
+
+  Returns:
+    The output tensor of the block.
+  """
+  block_dims = _block_dimensions(bottleneck=bottleneck, strides=strides)
+  shortcut = inputs
+
+  if version == 1:
+    block_dims[-1]["final"] = True  # Shortcut is added in the last layer.
+
+    if projection_shortcut is not None:
+      shortcut = projection_shortcut(inputs)
+      shortcut = batch_norm(inputs=shortcut, training=training,
+                            data_format=data_format)
+    for block in block_dims:
+      inputs = conv2d_fixed_padding(
+          inputs=inputs,
+          filters=filters * block["filters_mult"],
+          kernel_size=block["kernel_size"],
+          strides=block["strides"],
+          data_format=data_format)
+
+      inputs = batch_norm(inputs, training, data_format)
+      if block.get("final"):
+        inputs += shortcut
+      inputs = tf.nn.relu(inputs)
+
+    return inputs
+
+  elif version == 2:
+    block_dims[0]["first"] = True
+
+    inputs = batch_norm(inputs, training, data_format)
+    inputs = tf.nn.relu(inputs)
+
+    # The projection shortcut should come after the first batch norm and ReLU
+    # since it performs a 1x1 convolution.
+    if projection_shortcut is not None:
+      shortcut = projection_shortcut(inputs)
+
+    for block in block_dims:
+      # The first batch normalization and ReLU is performed outside of the loop
+      # in order to share operations with the projector where applicable.
+      if not block.get("first"):
+        inputs = batch_norm(inputs, training, data_format)
+        inputs = tf.nn.relu(inputs)
+
+      inputs = conv2d_fixed_padding(
+          inputs=inputs,
+          filters=filters * block["filters_mult"],
+          kernel_size=block["kernel_size"],
+          strides=block["strides"],
+          data_format=data_format)
+
+    return inputs + shortcut
+
+
+################################################################################
 # ResNet block definitions.
 ################################################################################
 def _building_block_v1(inputs, filters, training, projection_shortcut, strides,
