@@ -52,7 +52,7 @@ def _random_crop_and_flip(image):
     3-D tensor with cropped image.
 
   """
-  image_shape = tf.cast(tf.extract_jpeg_shape(image). tf.float32)
+  image_shape = tf.cast(tf.image.extract_jpeg_shape(image). tf.float32)
   height, width = image_shape[0], image_shape[1]
 
   # Create a random bounding box.
