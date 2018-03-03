@@ -38,36 +38,40 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-_RESIZE_SIZE = 300
+_MIN_RESIZE_FRACTION = .4
+_MAX_RESIZE_FRACTION = .85
 
 
-def _random_crop_and_flip(image, crop_height, crop_width):
+def _random_crop_and_flip(image):
   """Crops the given image to a random part of the image, and randomly flips.
 
   Args:
     image: a 3-D image tensor
-    crop_height: the new height.
-    crop_width: the new width.
 
   Returns:
     3-D tensor with cropped image.
 
   """
-  height, width = tf.shape(image)[0], tf.shape(image)[1]
+  image_shape = tf.cast(tf.extract_jpeg_shape(image). tf.float32)
+  height, width = image_shape[0], image_shape[1]
 
   # Create a random bounding box.
   #
   # Use tf.random_uniform and not numpy.random.rand as doing the former would
   # generate random numbers at graph eval time, unlike the latter which
   # generates random numbers at graph definition time.
-  total_crop_height = (height - crop_height)
-  crop_top = tf.random_uniform([], maxval=total_crop_height + 1, dtype=tf.int32)
-  total_crop_width = (width - crop_width)
-  crop_left = tf.random_uniform([], maxval=total_crop_width + 1, dtype=tf.int32)
+  crop_fraction = tf.random_uniform(
+      [], minval=_MIN_RESIZE_FRACTION, maxval=_MAX_RESIZE_FRACTION)
 
-  cropped = tf.slice(
-      image, [crop_top, crop_left, 0], [crop_height, crop_width, -1])
+  amount_to_crop_h = height - (crop_fraction * height)
+  offset_y = tf.random_uniform([], maxval=amount_to_crop_h)
+  amount_to_crop_w = width - (crop_fraction * width)
+  offset_x = tf.random_uniform([], maxval=amount_to_crop_w)
 
+  crop_window = tf.stack([offset_y, offset_x, height, width])
+  crop_window = tf.cast(crop_window, tf.int32)
+
+  cropped = tf.image.decode_and_crop_jpeg(image, crop_window, channels=3)
   cropped = tf.image.random_flip_left_right(cropped)
   return cropped
 
@@ -140,16 +144,16 @@ def preprocess_image(image, output_height, output_width, is_training=False):
     A preprocessed image.
   """
   # Note that resizing converts the image to float32
-  image = tf.image.resize_images(
-      image,
-      [_RESIZE_SIZE, _RESIZE_SIZE],
-      method=tf.image.ResizeMethod.BILINEAR,
-      align_corners=False)
-
   if is_training:
-    image = _random_crop_and_flip(image, output_height, output_width)
+    image = _random_crop_and_flip(image)
   else:
     image = _central_crop(image, output_height, output_width)
+
+  image = tf.image.resize_images(
+      image,
+      [output_height, output_width],
+      method=tf.image.ResizeMethod.BILINEAR,
+      align_corners=False)
 
   num_channels = image.get_shape().as_list()[-1]
   image.set_shape([output_height, output_width, num_channels])
