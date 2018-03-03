@@ -52,7 +52,7 @@ def _random_crop_and_flip(image):
     3-D tensor with cropped image.
 
   """
-  image_shape = tf.cast(tf.image.extract_jpeg_shape(image). tf.float32)
+  image_shape = tf.cast(tf.image.extract_jpeg_shape(image), tf.float32)
   height, width = image_shape[0], image_shape[1]
 
   # Create a random bounding box.
@@ -63,12 +63,12 @@ def _random_crop_and_flip(image):
   crop_fraction = tf.random_uniform(
       [], minval=_MIN_RESIZE_FRACTION, maxval=_MAX_RESIZE_FRACTION)
 
-  amount_to_crop_h = height - (crop_fraction * height)
-  offset_y = tf.random_uniform([], maxval=amount_to_crop_h)
-  amount_to_crop_w = width - (crop_fraction * width)
-  offset_x = tf.random_uniform([], maxval=amount_to_crop_w)
+  new_height = crop_fraction * height
+  offset_y = tf.random_uniform([], maxval=(height - new_height))
+  new_width = crop_fraction * width
+  offset_x = tf.random_uniform([], maxval=(width - new_width))
 
-  crop_window = tf.stack([offset_y, offset_x, height, width])
+  crop_window = tf.stack([offset_y, offset_x, new_height, new_width])
   crop_window = tf.cast(crop_window, tf.int32)
 
   cropped = tf.image.decode_and_crop_jpeg(image, crop_window, channels=3)
