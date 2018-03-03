@@ -38,8 +38,9 @@ _R_MEAN = 123.68
 _G_MEAN = 116.78
 _B_MEAN = 103.94
 
-_MIN_RESIZE_FRACTION = .4
-_MAX_RESIZE_FRACTION = .85
+_MIN_CROP_FRACTION = .4
+_MAX_CROP_FRACTION = .85
+_MEAN_CROP_FRACTION = _MIN_CROP_FRACTION / _MAX_CROP_FRACTION
 
 
 def _random_crop_and_flip(image):
@@ -61,7 +62,7 @@ def _random_crop_and_flip(image):
   # generate random numbers at graph eval time, unlike the latter which
   # generates random numbers at graph definition time.
   crop_fraction = tf.random_uniform(
-      [], minval=_MIN_RESIZE_FRACTION, maxval=_MAX_RESIZE_FRACTION)
+      [], minval=_MIN_CROP_FRACTION, maxval=_MAX_CROP_FRACTION)
 
   new_height = crop_fraction * height
   offset_y = tf.random_uniform([], maxval=(height - new_height))
@@ -76,8 +77,10 @@ def _random_crop_and_flip(image):
   return cropped
 
 
-def _central_crop(image, crop_height, crop_width):
+def _central_crop(image):
   """Performs central crops of the given image list.
+
+  TODO(karmel): update all these docstrings.
 
   Args:
     image: a 3-D image tensor
@@ -87,14 +90,18 @@ def _central_crop(image, crop_height, crop_width):
   Returns:
     3-D tensor with cropped image.
   """
-  height, width = tf.shape(image)[0], tf.shape(image)[1]
+  image_shape = tf.cast(tf.image.extract_jpeg_shape(image), tf.float32)
+  height, width = image_shape[0], image_shape[1]
 
-  total_crop_height = (height - crop_height)
-  crop_top = total_crop_height // 2
-  total_crop_width = (width - crop_width)
-  crop_left = total_crop_width // 2
-  return tf.slice(
-      image, [crop_top, crop_left, 0], [crop_height, crop_width, -1])
+  new_height = _MEAN_CROP_FRACTION * height
+  offset_y = (height - new_height) // 2
+  new_width = _MEAN_CROP_FRACTION * width
+  offset_x = (width - new_width) // 2
+
+  crop_window = tf.stack([offset_y, offset_x, new_height, new_width])
+  crop_window = tf.cast(crop_window, tf.int32)
+
+  return tf.image.decode_and_crop_jpeg(image, crop_window, channels=3)
 
 
 def _mean_image_subtraction(image, means):
@@ -147,7 +154,7 @@ def preprocess_image(image, output_height, output_width, is_training=False):
   if is_training:
     image = _random_crop_and_flip(image)
   else:
-    image = _central_crop(image, output_height, output_width)
+    image = _central_crop(image)
 
   image = tf.image.resize_images(
       image,
