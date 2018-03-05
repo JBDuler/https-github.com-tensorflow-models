@@ -18,7 +18,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-
+import examples_per_second_hook
 
 def get_train_hooks(names):
   """Factory for getting a list of TensorFlow hooks for training by name.
@@ -34,6 +34,12 @@ def get_train_hooks(names):
     ValueError: if an unrecognized name is passed
   """
 
+  if not names:
+    raise ValueError('Hook names cannot be None/Empty')
+
+  if not isinstance(names, str):
+    raise ValueError('Hook names should be a string')
+
   name_list = [name.strip().lower() for name in names.split(',')]
 
   hooks = []
@@ -42,7 +48,7 @@ def get_train_hooks(names):
       hooks.append(get_logging_tensor_hook())
     elif name == 'profilerhook':
       hooks.append(get_profiler_hook())
-    elif name == 'examplepersecondhook':
+    elif name == 'examplespersecondhook':
       hooks.append(get_examples_per_second_hook())
     else:
       raise ValueError('Unrecognized training hook requested: {}'.format(name))
@@ -71,4 +77,4 @@ def get_profiler_hook():
 
 
 def get_examples_per_second_hook():
-  pass
+  return examples_per_second_hook.ExamplesPerSecondHook(batch_size = 256)
