@@ -328,11 +328,6 @@ class Model(object):
         If set to None, the format is dependent on whether a GPU is available.
     """
     self.resnet_size = resnet_size
-
-    if not data_format:
-      data_format = (
-          'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
-
     self.data_format = data_format
     self.num_classes = num_classes
     self.num_filters = num_filters
@@ -574,6 +569,9 @@ def resnet_main(flags, model_function, input_function):
   # Using the Winograd non-fused algorithms provides a small performance boost.
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
+  if flags.device == "cpu":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
   if flags.multi_gpu:
     validate_batch_size_for_multi_gpu(flags.batch_size)
 
@@ -624,54 +622,51 @@ def resnet_main(flags, model_function, input_function):
     print(eval_results)
 
 
-class ResnetArgParser(argparse.ArgumentParser):
+# Hack code until a more formal solution is decided.
+import os
+import sys
+_ROOT = os.path.abspath(__file__).split("models/official")[0] + "models"
+if _ROOT not in sys.path: sys.path.append(_ROOT)
+
+import official.utils.arg_parsers
+class NewResNetArgParser(official.utils.arg_parsers.BaseParser):
   """Arguments for configuring and running a Resnet Model.
   """
-
   def __init__(self, resnet_size_choices=None):
-    super(ResnetArgParser, self).__init__()
-    self.add_argument(
-        '--data_dir', type=str, default='/tmp/resnet_data',
-        help='The directory where the input data is stored.')
+    self.resnet_size_choices = resnet_size_choices
+    super().__init__()
+    self._add_device_args(allow_cpu=True, allow_gpu=True, allow_multi_gpu=True)
+    self._add_supervised_args()
+    self.add_int("num_parallel_calls", "npc", default=5,
+         help='The number of records that are processed in parallel during'
+              ' input processing. This can be optimized per data set but for '
+              'generally homogeneous data sets, should be approximately the '
+              'number of available CPU cores.')
+    self.add_str("data_format", "df", default="auto",
+                 choices=['auto', 'channels_first', 'channels_last'],
+                 help='A flag to override the data format used in the model. '
+                      'channels_first provides a performance boost on GPU but '
+                      'is not always compatible with CPU. If left unspecified, '
+                      'the data format will be chosen automatically based on '
+                      'whether TensorFlow was built for CPU or GPU.')
 
-    self.add_argument(
-        '--num_parallel_calls', type=int, default=5,
-        help='The number of records that are processed in parallel '
-        'during input processing. This can be optimized per data set but '
-        'for generally homogeneous data sets, should be approximately the '
-        'number of available CPU cores.')
+  # Get rid of unwanted args
+  def _add_tmp_dir(self): pass
+  def _add_learning_rate(self): pass
 
-    self.add_argument(
-        '--model_dir', type=str, default='/tmp/resnet_model',
-        help='The directory where the model will be stored.')
+  def _add_supervised_args(self):
+    super()._add_supervised_args()
+    self.add_int("resnet_size", "s", default=50,
+                 choices=self.resnet_size_choices,
+                 help='The size of the ResNet model to use.')
 
-    self.add_argument(
-        '--resnet_size', type=int, default=50,
-        choices=resnet_size_choices,
-        help='The size of the ResNet model to use.')
+  def parse_args(self, args=None, namespace=None):
+    namespace = super().parse_args(args=args, namespace=namespace)
+    if namespace.data_format == "auto":
+      namespace.data_format = (
+        'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
 
-    self.add_argument(
-        '--train_epochs', type=int, default=100,
-        help='The number of epochs to use for training.')
+    if namespace.device == "auto":
+      namespace.device = "gpu" if tf.test.is_built_with_cuda() else "cpu"
 
-    self.add_argument(
-        '--epochs_per_eval', type=int, default=1,
-        help='The number of training epochs to run between evaluations.')
-
-    self.add_argument(
-        '--batch_size', type=int, default=32,
-        help='Batch size for training and evaluation.')
-
-    self.add_argument(
-        '--data_format', type=str, default=None,
-        choices=['channels_first', 'channels_last'],
-        help='A flag to override the data format used in the model. '
-             'channels_first provides a performance boost on GPU but '
-             'is not always compatible with CPU. If left unspecified, '
-             'the data format will be chosen automatically based on '
-             'whether TensorFlow was built for CPU or GPU.')
-
-    self.add_argument(
-        '--multi_gpu', action='store_true',
-        help='If set, run across all available GPUs. Note that this is '
-        'superseded by the --num_gpus flag.')
+    return namespace
