@@ -49,11 +49,14 @@ def _get_h_w(image):
   return shape[0], shape[1]
 
 
-def _random_crop_and_flip(image, crop_height, crop_width):
+def _random_crop_and_flip(image, bbox, crop_height, crop_width):
   """Crops the given image to a random part of the image, and randomly flips.
 
   Args:
     image: a 3-D image tensor
+    bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
+      where each coordinate is [0, 1) and the coordinates are arranged as
+      [ymin, xmin, ymax, xmax].
     crop_height: the new height.
     crop_width: the new width.
 
@@ -61,25 +64,31 @@ def _random_crop_and_flip(image, crop_height, crop_width):
     3-D tensor with cropped image.
 
   """
-  height, width = _get_h_w(image)
 
-  # Create a random bounding box.
-  #
-  # Use tf.random_uniform and not numpy.random.rand as doing the former would
-  # generate random numbers at graph eval time, unlike the latter which
-  # generates random numbers at graph definition time.
-  total_crop_height = (height - crop_height)
-  crop_top = tf.random_uniform([], maxval=total_crop_height + 1, dtype=tf.int32)
-  total_crop_width = (width - crop_width)
-  crop_left = tf.random_uniform([], maxval=total_crop_width + 1, dtype=tf.int32)
+  # A large fraction of image datasets contain a human-annotated bounding box
+  # delineating the region of the image containing the object of interest.  We
+  # choose to create a new bounding box for the object which is a randomly
+  # distorted version of the human-annotated bounding box that obeys an
+  # allowed range of aspect ratios, sizes and overlap with the human-annotated
+  # bounding box. If no box is supplied, then we assume the bounding box is
+  # the entire image.
+  sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
+      tf.image.extract_jpeg_shape(image),
+      bounding_boxes=bbox,
+      min_object_covered=0.1,
+      aspect_ratio_range=[0.75, 1.33],
+      area_range=[0.05, 1.0],
+      max_attempts=100,
+      use_image_if_no_bounding_boxes=True)
+  bbox_begin, bbox_size, _ = sample_distorted_bounding_box
 
-  cropped = tf.slice(
-      image, [crop_top, crop_left, 0], [crop_height, crop_width, -1])
+  cropped = tf.slice(image, bbox_begin, bbox_size)
 
   cropped = tf.image.random_flip_left_right(cropped)
   return cropped
 
-def _central_crop(image, crop_height, crop_width):
+
+def _central_crop(image, bbox, crop_height, crop_width):
   """Performs central crops of the given image list.
 
   Args:
@@ -184,13 +193,17 @@ def _aspect_preserving_resize(image, smallest_side):
   return resized_image
 
 
-def preprocess_image(image, output_height, output_width, is_training=False,
+def preprocess_image(image, bbox, output_height, output_width,
+                     is_training=False,
                      resize_side_min=_RESIZE_SIDE_MIN,
                      resize_side_max=_RESIZE_SIDE_MAX):
   """Preprocesses the given image.
 
   Args:
     image: A `Tensor` representing an image of arbitrary size.
+    bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
+      where each coordinate is [0, 1) and the coordinates are arranged as
+      [ymin, xmin, ymax, xmax].
     output_height: The height of the image after preprocessing.
     output_width: The width of the image after preprocessing.
     is_training: `True` if we're preprocessing the image for training and
@@ -217,7 +230,7 @@ def preprocess_image(image, output_height, output_width, is_training=False,
 
   num_channels = image.get_shape().as_list()[-1]
   image = _aspect_preserving_resize(image, resize_side)
-  image = crop_fn(image, output_height, output_width)
+  image = crop_fn(image, bbox, output_height, output_width)
 
   image.set_shape([output_height, output_width, num_channels])
 
