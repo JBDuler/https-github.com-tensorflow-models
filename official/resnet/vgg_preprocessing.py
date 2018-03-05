@@ -82,7 +82,12 @@ def _random_crop_and_flip(image, bbox, crop_height, crop_width):
       use_image_if_no_bounding_boxes=True)
   bbox_begin, bbox_size, _ = sample_distorted_bounding_box
 
-  cropped = tf.slice(image, bbox_begin, bbox_size)
+  #image = tf.image.decode_jpeg(image, channels=3)
+  #cropped = tf.slice(image, bbox_begin, bbox_size)
+  offset_y, offset_x, _ = tf.unstack(bbox_begin)
+  target_height, target_width, _ = tf.unstack(bbox_size)
+  crop_window = tf.stack([offset_y, offset_x, target_height, target_width])
+  cropped = tf.image.decode_and_crop_jpeg(image, crop_window, channels=3)
 
   cropped = tf.image.random_flip_left_right(cropped)
   return cropped
@@ -226,6 +231,7 @@ def preprocess_image(image, bbox, output_height, output_width,
         image, [output_height, output_width],
         method=tf.image.ResizeMethod.BILINEAR, align_corners=False)
   else:
+    image = tf.image.decode_jpeg(image, channels=3)
     image = _aspect_preserving_resize(image, resize_side_min)
     image = _central_crop(image, output_height, output_width)
 
