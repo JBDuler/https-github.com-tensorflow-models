@@ -223,7 +223,6 @@ def preprocess_image(image, bbox, output_height, output_width,
   if is_training:
     # For training, we want to randomize some of the distortions.
     image = _random_crop_and_flip(image, bbox, output_height, output_width)
-    image = tf.image.decode_jpeg(image, channels=_NUM_CHANNELS)
     image = tf.image.resize_images(
         image, [output_height, output_width],
         method=tf.image.ResizeMethod.BILINEAR, align_corners=False)
