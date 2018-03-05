@@ -73,7 +73,7 @@ def _random_crop_and_flip(image, bbox, crop_height, crop_width):
   # bounding box. If no box is supplied, then we assume the bounding box is
   # the entire image.
   sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
-      tf.shape(image),
+      tf.image.extract_jpeg_shape(image),
       bounding_boxes=bbox,
       min_object_covered=0.1,
       aspect_ratio_range=[0.75, 1.33],
