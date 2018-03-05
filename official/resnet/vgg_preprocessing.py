@@ -221,8 +221,8 @@ def preprocess_image(image, bbox, output_height, output_width,
   """
   if is_training:
     # For training, we want to randomize some of the distortions.
-    resize_side = tf.random_uniform(
-        [], minval=resize_side_min, maxval=resize_side_max + 1, dtype=tf.int32)
+    #resize_side = tf.random_uniform(
+    #    [], minval=resize_side_min, maxval=resize_side_max + 1, dtype=tf.int32)
     crop_fn = _random_crop_and_flip
   else:
     resize_side = resize_side_min
@@ -230,7 +230,9 @@ def preprocess_image(image, bbox, output_height, output_width,
 
   num_channels = image.get_shape().as_list()[-1]
   image = crop_fn(image, bbox, output_height, output_width)
-  image = _aspect_preserving_resize(image, output_height)
+  image = tf.image.resize_images(
+      image, [output_height, output_width],
+      method=tf.image.ResizeMethod.BILINEAR, align_corners=False)
 
   image.set_shape([output_height, output_width, num_channels])
 
