@@ -155,7 +155,7 @@ def parse_record(raw_record, is_training):
       output_width=_DEFAULT_IMAGE_SIZE,
       is_training=is_training)
 
-  label = tf.one_hot(label, _NUM_CLASSES)
+  label = tf.one_hot(tf.reshape(label, shape=[]), _NUM_CLASSES)
 
   return image, label
 
