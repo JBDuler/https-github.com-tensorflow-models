@@ -232,7 +232,7 @@ def preprocess_image(image, bbox, output_height, output_width,
         method=tf.image.ResizeMethod.BILINEAR, align_corners=False)
   else:
     image = tf.image.decode_jpeg(image, channels=3)
-    image = _aspect_preserving_resize(image, resize_side_min)
+    #image = _aspect_preserving_resize(image, resize_side_min)
     image = _central_crop(image, output_height, output_width)
 
   num_channels = image.get_shape().as_list()[-1]
