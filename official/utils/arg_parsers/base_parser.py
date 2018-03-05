@@ -17,19 +17,32 @@ import argparse
 import re
 
 
-class UnparsedArgumentError(Exception):
+class NearlyRawTextHelpFormatter(argparse.HelpFormatter):
   """
-    Exception class to enforce that all arguments are parsed. By default
-  argparse will ignore arguments that it doesn't recognize, resulting in silent
-  failures for typos.
+    This formatter allows explicit newlines and indentation, but handles
+  wrapping text where appropriate.
   """
-  def __init__(self, args):
-    self.args = args
+  def _split_lines(self, text, width):
+    output = []
+    for line in text.splitlines():
+      output.extend(self._split_for_length(line, width=width))
+    return output
 
-  def __str__(self):
-    return "Failed to parse the following arguments:\n  {}".format(
-        "\n  ".join(self.args)
-    )
+  @staticmethod
+  def _split_for_length(text, width):
+    out_lines = [[]]
+    segments = [i + " " for i in text.split(" ")]
+    segments[-1] = segments[-1][:-1]
+    current_len = 0
+    for segment in segments:
+      if not current_len or current_len + len(segment) <= width:
+        current_len += len(segment)
+        out_lines[-1].append(segment)
+      else:
+        current_len = 0
+        out_lines.append([segment])
+    return ["".join(i) for i in out_lines]
+
 
 
 class BaseParser(argparse.ArgumentParser):
@@ -40,7 +53,7 @@ class BaseParser(argparse.ArgumentParser):
 
   def __init__(self):
     super().__init__(
-        formatter_class=argparse.RawTextHelpFormatter,
+        formatter_class=NearlyRawTextHelpFormatter,
         allow_abbrev=False,  # abbreviations are handled explictly.
     )
     self._add_generic_args()
@@ -66,7 +79,7 @@ class BaseParser(argparse.ArgumentParser):
   def _pretty_help(help, default, choices, required, var_type):
     prestring = ""
     if choices is not None:
-      prestring = str({var_type(i) for i in choices}) + "    "
+      prestring = "{" + ", ".join([str(var_type(i)) for i in choices]) + "}    "
 
     if required:
       prestring += "Required."
@@ -84,7 +97,7 @@ class BaseParser(argparse.ArgumentParser):
       choices=choices, required=required, help=help
     )
 
-  def add_float(self, name, short_name, default=None, choices=None,
+  def add_float(self, name, short_name=None, default=None, choices=None,
                 required=False, help=""):
     return self._add_generic_type(
       float, name=name, short_name=short_name, nargs=1, default=default,
@@ -104,7 +117,7 @@ class BaseParser(argparse.ArgumentParser):
 
     names = ["--" + name]
     if short_name is not None:
-      names = ["-" + short_name]
+      names = ["-" + short_name] + names
 
     self.add_argument(
       *names,
@@ -154,7 +167,7 @@ class BaseParser(argparse.ArgumentParser):
   def _add_model_dir(self):
     self.add_str("model_dir", "md", default="/tmp",
                  help="The directory where model specific files (event files, "
-                      "snapshots, etc.)\nare stored."
+                      "snapshots, etc.) are stored."
     )
 
   #=============================================================================
@@ -173,8 +186,7 @@ class BaseParser(argparse.ArgumentParser):
 
   def _add_epochs_per_eval(self):
     self.add_int("epochs_per_eval", "epe", default=1,
-                 help="The number of training epochs to run between\n"
-                      "evaluations.",
+               help="The number of training epochs to run between evaluations.",
     )
 
   def _add_learning_rate(self):
@@ -190,17 +202,18 @@ class BaseParser(argparse.ArgumentParser):
   #=============================================================================
   # Add Args for Specifying Devices
   #=============================================================================
-  def _add_device_args(self, cpu=False, gpu=False, tpu=False, multi_gpu=False):
+  def _add_device_args(self, allow_cpu=False, allow_gpu=False, allow_tpu=False,
+                       allow_multi_gpu=False):
     """
       This method should be called in the __init__ of the child class. The exact
     pattern for this section has yet to be finalized.
     """
-    gpu = gpu or multi_gpu  # multi_gpu implies gpu=True
+    allow_gpu = allow_gpu or allow_multi_gpu  # multi_gpu implies gpu=True
 
     device_types = []
-    if cpu: device_types.append("cpu")
-    if gpu: device_types.append("gpu")
-    if tpu:
+    if allow_cpu: device_types.append("cpu")
+    if allow_gpu: device_types.append("gpu")
+    if allow_tpu:
       device_types.append("tpu")
       raise ValueError("tpu args are not ready yet.")
 
@@ -208,10 +221,10 @@ class BaseParser(argparse.ArgumentParser):
       raise ValueError("No legal devices specified.")
 
     self._add_set_device_arg(device_types=device_types)
-    if multi_gpu:
+    if allow_multi_gpu:
       self.add_bool("multi_gpu",
                     help="If set, run across all available GPUs. Note that "
-                         "this is superseded by\nthe --num_gpus flag."
+                         "this is superseded by the --num_gpus flag."
       )
 
   def _add_set_device_arg(self, device_types):
@@ -221,7 +234,7 @@ class BaseParser(argparse.ArgumentParser):
     self.add_str("device", "d", default="auto",
                  choices=["auto"] + device_types,
                  help="Primary device for neural network computations. Other "
-                      "tasks such as\ndataset managenent may occur on other"
+                      "tasks such as dataset managenent may occur on other "
                       "devices. (Generally the CPU.)"
     )
 

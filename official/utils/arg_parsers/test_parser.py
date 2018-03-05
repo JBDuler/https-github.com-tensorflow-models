@@ -25,7 +25,7 @@ import official.utils.arg_parsers
 class TestParser(official.utils.arg_parsers.BaseParser):
   def __init__(self):
     super().__init__()
-    self._add_device_args(cpu=True, gpu=True, multi_gpu=True)
+    self._add_device_args(allow_cpu=True, allow_gpu=True, allow_multi_gpu=True)
     self._add_supervised_args()
 
   def _add_learning_rate(self):
