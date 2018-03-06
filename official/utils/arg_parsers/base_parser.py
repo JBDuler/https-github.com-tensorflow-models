@@ -14,14 +14,15 @@
 # ==============================================================================
 
 import argparse
-import re
 
 
 class NearlyRawTextHelpFormatter(argparse.HelpFormatter):
+  """Formatter for unified arg parser.
+
+    This formatter allows explicit newlines and indentation but handles wrapping
+  text where appropriate.
   """
-    This formatter allows explicit newlines and indentation, but handles
-  wrapping text where appropriate.
-  """
+
   def _split_lines(self, text, width):
     output = []
     for line in text.splitlines():
@@ -44,15 +45,15 @@ class NearlyRawTextHelpFormatter(argparse.HelpFormatter):
     return ["".join(i) for i in out_lines]
 
 
-
 class BaseParser(argparse.ArgumentParser):
-  """
+  """Parent parser class for official models.
+
     This class is intended to house convenience functions, enforcement code, and
   universal or nearly universal arguments.
   """
 
   def __init__(self):
-    super().__init__(
+    super(BaseParser, self).__init__(
         formatter_class=NearlyRawTextHelpFormatter,
         allow_abbrev=False,  # abbreviations are handled explictly.
     )
@@ -76,7 +77,7 @@ class BaseParser(argparse.ArgumentParser):
     return output
 
   @staticmethod
-  def _pretty_help(help, default, choices, required, var_type):
+  def _pretty_help(help_text, default, choices, required, var_type):
     prestring = ""
     if choices is not None:
       prestring = "{" + ", ".join([str(var_type(i)) for i in choices]) + "}    "
@@ -86,33 +87,34 @@ class BaseParser(argparse.ArgumentParser):
     elif default is not None:
       prestring += "Default: %(default)s"
 
-    if len(prestring):
+    if prestring:
       prestring += "\n"
-    return prestring + help
+    return prestring + help_text
 
   def add_int(self, name, short_name=None, default=None, choices=None,
-              required=False, help=""):
+              required=False, help_text=""):
     return self._add_generic_type(
-      str, name=name, short_name=short_name, nargs=1, default=default,
-      choices=choices, required=required, help=help
+        str, name=name, short_name=short_name, nargs=1, default=default,
+        choices=choices, required=required, help_text=help_text
     )
 
   def add_float(self, name, short_name=None, default=None, choices=None,
-                required=False, help=""):
+                required=False, help_text=""):
     return self._add_generic_type(
-      float, name=name, short_name=short_name, nargs=1, default=default,
-      choices=choices, required=required, help=help
+        float, name=name, short_name=short_name, nargs=1, default=default,
+        choices=choices, required=required, help_text=help_text
     )
 
   def add_str(self, name, short_name=None, nargs=None, default=None,
-              choices=None, required=False, help=""):
+              choices=None, required=False, help_text=""):
     return self._add_generic_type(
-      str, name=name, short_name=short_name, nargs=nargs, default=default,
-      choices=choices, required=required, help=help
+        str, name=name, short_name=short_name, nargs=nargs, default=default,
+        choices=choices, required=required, help_text=help_text
     )
 
   def _add_generic_type(self, var_type, name, short_name=None, nargs=None,
-                        default=None, choices=None, required=False, help=""):
+                        default=None, choices=None, required=False,
+                        help_text=""):
     self._add_checks(default=default, required=required)
 
     names = ["--" + name]
@@ -120,37 +122,37 @@ class BaseParser(argparse.ArgumentParser):
       names = ["-" + short_name] + names
 
     self.add_argument(
-      *names,
-      nargs=nargs,
-      default=default,
-      type=var_type,
-      choices=choices,
-      required=required,
-      help=self._pretty_help(help=help, default=default, choices=choices,
-                             required=required, var_type=var_type),
-      metavar=name.upper(),
-      dest=name,
+        *names,
+        nargs=nargs,
+        default=default,
+        type=var_type,
+        choices=choices,
+        required=required,
+        help=self._pretty_help(help_text=help_text, default=default,
+                               choices=choices, required=required,
+                               var_type=var_type),
+        metavar=name.upper(),
+        dest=name
     )
 
-  def add_bool(self, name, short_name=None, help=""):
+  def add_bool(self, name, short_name=None, help_text=""):
     names = ["--" + name]
     if short_name is not None:
       names = ["-" + short_name] + names
 
     self.add_argument(
-       *names,
-       action="store_true",
-       help=help,
-       dest=name,
+        *names,
+        action="store_true",
+        help=help_text,
+        dest=name
     )
 
   #============================================================================
   # Add Generic Args
   #============================================================================
-  """
-    Each arg addition is wrapped in a function so that if a subclass doesn't
-  want the arg it can override the defining function with a no-op.
-  """
+  #   Each arg addition is wrapped in a function so that if a subclass doesn't
+  # want the arg it can override the defining function with a no-op.
+
   def _add_generic_args(self):
     self._add_tmp_dir()
     self._add_data_dir()
@@ -158,16 +160,17 @@ class BaseParser(argparse.ArgumentParser):
 
   def _add_tmp_dir(self):
     self.add_str("tmp_dir", "td", default="/tmp",
-                 help="A directory to place temporary files.")
+                 help_text="A directory to place temporary files.")
 
   def _add_data_dir(self):
     self.add_str("data_dir", "dd", default="/tmp",
-                 help="The directory where the input data is stored.")
+                 help_text="The directory where the input data is stored.")
 
   def _add_model_dir(self):
-    self.add_str("model_dir", "md", default="/tmp",
-                 help="The directory where model specific files (event files, "
-                      "snapshots, etc.) are stored."
+    self.add_str(
+        "model_dir", "md", default="/tmp",
+        help_text="The directory where model specific files (event files, "
+                  "snapshots, etc.) are stored."
     )
 
   #=============================================================================
@@ -180,23 +183,27 @@ class BaseParser(argparse.ArgumentParser):
     self._add_batch_size()
 
   def _add_train_epochs(self):
-    self.add_int("train_epochs", "te", default=1,
-                 help="The number of epochs to use for training.",
+    self.add_int(
+        "train_epochs", "te", default=1,
+        help_text="The number of epochs to use for training."
     )
 
   def _add_epochs_per_eval(self):
-    self.add_int("epochs_per_eval", "epe", default=1,
-               help="The number of training epochs to run between evaluations.",
+    self.add_int(
+        "epochs_per_eval", "epe", default=1,
+        help_text="The number of training epochs to run between evaluations."
     )
 
   def _add_learning_rate(self):
-    self.add_float("learning_rate", "lr", default=1.,
-                   help="The learning rate to be used during training.",
+    self.add_float(
+        "learning_rate", "lr", default=1.,
+        help_text="The learning rate to be used during training."
     )
 
   def _add_batch_size(self):
-    self.add_int("batch_size", "bs", default=32,
-                 help="Batch size for training and evaluation.",
+    self.add_int(
+        "batch_size", "bs", default=32,
+        help_text="Batch size for training and evaluation."
     )
 
   #=============================================================================
@@ -204,9 +211,16 @@ class BaseParser(argparse.ArgumentParser):
   #=============================================================================
   def _add_device_args(self, allow_cpu=False, allow_gpu=False, allow_tpu=False,
                        allow_multi_gpu=False):
-    """
+    """Function for determining which device type args are relevant.
+
       This method should be called in the __init__ of the child class. The exact
     pattern for this section has yet to be finalized.
+
+    Args:
+      allow_cpu: The model can be set to run on CPU.
+      allow_gpu: The model can be set to run on GPU.
+      allow_tpu: The model can be set to run on TPU.
+      allow_multi_gpu: The model allows multi GPU training as an option.
     """
     allow_gpu = allow_gpu or allow_multi_gpu  # multi_gpu implies gpu=True
 
@@ -217,25 +231,22 @@ class BaseParser(argparse.ArgumentParser):
       device_types.append("tpu")
       raise ValueError("tpu args are not ready yet.")
 
-    if not len(device_types):
+    if not device_types:
       raise ValueError("No legal devices specified.")
 
     self._add_set_device_arg(device_types=device_types)
     if allow_multi_gpu:
       self.add_bool("multi_gpu",
-                    help="If set, run across all available GPUs. Note that "
-                         "this is superseded by the --num_gpus flag."
-      )
+                    help_text="If set, run across all available GPUs.")
 
   def _add_set_device_arg(self, device_types):
     if len(device_types) == 1:
       return  # no need for the user to specify the device
 
-    self.add_str("device", "d", default="auto",
-                 choices=["auto"] + device_types,
-                 help="Primary device for neural network computations. Other "
-                      "tasks such as dataset managenent may occur on other "
-                      "devices. (Generally the CPU.)"
+    self.add_str(
+        "device", "d", default="auto", choices=["auto"] + device_types,
+        help_text="Primary device for neural network computations. Other tasks "
+                  "may occur on other devices. (Generally the CPU.)"
     )
 
 

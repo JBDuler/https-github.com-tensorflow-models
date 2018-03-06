@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Contains definitions for the preactivation form of Residual Networks
-(also known as ResNet v2).
+"""Defines the preactivation form of Residual Networks (aka as ResNet v2).
 
 Residual networks (ResNets) were originally proposed in:
 [1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
@@ -33,9 +32,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import argparse
+# Hack code until a more formal solution is decided.
 import os
+import sys
+_ROOT = os.path.abspath(__file__).split("models/official")[0] + "models"
+if _ROOT not in sys.path: sys.path.append(_ROOT)
 
+import official.utils.arg_parsers
 import tensorflow as tf
 
 _BATCH_NORM_DECAY = 0.997
@@ -547,21 +550,24 @@ def validate_batch_size_for_multi_gpu(batch_size):
   Note that this should eventually be handled by replicate_model_fn
   directly. Multi-GPU support is currently experimental, however,
   so doing the work here until that feature is in place.
+
+  Args:
+    batch_size: The number of samples to process in a single mini-batch.
   """
   from tensorflow.python.client import device_lib
 
   local_device_protos = device_lib.list_local_devices()
   num_gpus = sum([1 for d in local_device_protos if d.device_type == 'GPU'])
   if not num_gpus:
-    raise ValueError('Multi-GPU mode was specified, but no GPUs '
-      'were found. To use CPU, run without --multi_gpu.')
+    raise ValueError('Multi-GPU mode was specified, but no GPUs were found. '
+                     'To use CPU, run without --multi_gpu.')
 
   remainder = batch_size % num_gpus
   if remainder:
     err = ('When running with multiple GPUs, batch size '
-      'must be a multiple of the number of available GPUs. '
-      'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
-      ).format(num_gpus, batch_size, batch_size - remainder)
+           'must be a multiple of the number of available GPUs. '
+           'Found {} GPUs with a batch size of {}; try --batch_size={} instead.'
+          ).format(num_gpus, batch_size, batch_size - remainder)
     raise ValueError(err)
 
 
@@ -569,8 +575,8 @@ def resnet_main(flags, model_function, input_function):
   # Using the Winograd non-fused algorithms provides a small performance boost.
   os.environ['TF_ENABLE_WINOGRAD_NONFUSED'] = '1'
 
-  if flags.device == "cpu":
-    os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+  if flags.device == 'cpu':
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
   if flags.multi_gpu:
     validate_batch_size_for_multi_gpu(flags.batch_size)
@@ -622,33 +628,31 @@ def resnet_main(flags, model_function, input_function):
     print(eval_results)
 
 
-# Hack code until a more formal solution is decided.
-import os
-import sys
-_ROOT = os.path.abspath(__file__).split("models/official")[0] + "models"
-if _ROOT not in sys.path: sys.path.append(_ROOT)
-
-import official.utils.arg_parsers
 class NewResNetArgParser(official.utils.arg_parsers.BaseParser):
   """Arguments for configuring and running a Resnet Model.
   """
+
   def __init__(self, resnet_size_choices=None):
     self.resnet_size_choices = resnet_size_choices
     super().__init__()
     self._add_device_args(allow_cpu=True, allow_gpu=True, allow_multi_gpu=True)
     self._add_supervised_args()
-    self.add_int("num_parallel_calls", "npc", default=5,
-         help='The number of records that are processed in parallel during'
-              ' input processing. This can be optimized per data set but for '
-              'generally homogeneous data sets, should be approximately the '
-              'number of available CPU cores.')
-    self.add_str("data_format", "df", default="auto",
-                 choices=['auto', 'channels_first', 'channels_last'],
-                 help='A flag to override the data format used in the model. '
-                      'channels_first provides a performance boost on GPU but '
-                      'is not always compatible with CPU. If left unspecified, '
-                      'the data format will be chosen automatically based on '
-                      'whether TensorFlow was built for CPU or GPU.')
+    self.add_int(
+        'num_parallel_calls', 'npc', default=5,
+        help_text='The number of records that are processed in parallel '
+                  'during input processing. This can be optimized per data '
+                  'set but for generally homogeneous data sets, should be '
+                  'approximately the number of available CPU cores.'
+    )
+    self.add_str(
+        'data_format', 'df', default='auto',
+        choices=['auto', 'channels_first', 'channels_last'],
+        help_text='A flag to override the data format used in the model. '
+                  'channels_first provides a performance boost on GPU but '
+                  'is not always compatible with CPU. If left unspecified, '
+                  'the data format will be chosen automatically based on '
+                  'whether TensorFlow was built for CPU or GPU.'
+    )
 
   # Get rid of unwanted args
   def _add_tmp_dir(self): pass
@@ -656,17 +660,17 @@ class NewResNetArgParser(official.utils.arg_parsers.BaseParser):
 
   def _add_supervised_args(self):
     super()._add_supervised_args()
-    self.add_int("resnet_size", "s", default=50,
+    self.add_int('resnet_size', 's', default=50,
                  choices=self.resnet_size_choices,
-                 help='The size of the ResNet model to use.')
+                 help_text='The size of the ResNet model to use.')
 
   def parse_args(self, args=None, namespace=None):
     namespace = super().parse_args(args=args, namespace=namespace)
-    if namespace.data_format == "auto":
+    if namespace.data_format == 'auto':
       namespace.data_format = (
-        'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
+          'channels_first' if tf.test.is_built_with_cuda() else 'channels_last')
 
-    if namespace.device == "auto":
-      namespace.device = "gpu" if tf.test.is_built_with_cuda() else "cpu"
+    if namespace.device == 'auto':
+      namespace.device = 'gpu' if tf.test.is_built_with_cuda() else 'cpu'
 
     return namespace
